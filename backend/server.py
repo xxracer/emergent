@@ -1,29 +1,25 @@
 from fastapi import FastAPI, APIRouter, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi import FastAPI, APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
+from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 from pathlib import Path
-from typing import List
-from datetime import datetime, timezone, timedelta
+from pydantic import BaseModel, Field
+from typing import List, Optional, Dict
+import uuid
+from datetime import datetime, timezone
 import asyncio
 import random
 import json
 
-from backend.database import (
-    db,
-    close_mongo_connection,
-    TradingConfig,
-    TradingConfigUpdate,
-    Trade,
-    Balance,
-)
-from backend.binance_client import get_binance_client, close_binance_client, get_all_tickers
-from backend.trading_manager import start_trading_session, stop_trading_session, stop_all_sessions
-
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
+
+# MongoDB connection
+mongo_url = os.environ['MONGO_URL']
+client = AsyncIOMotorClient(mongo_url)
+db = client[os.environ['DB_NAME']]
 
 # Create the main app without a prefix
 app = FastAPI()
@@ -31,8 +27,61 @@ app = FastAPI()
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
 
+# Demo data - Simulación de tokens Alpha de Binance
+DEMO_ALPHA_TOKENS = [
+    {"symbol": "AIOZ/USDT", "price": 0.0847, "change": 12.5, "volume": 2850000},
+    {"symbol": "SUPER/USDT", "price": 1.2340, "change": -3.2, "volume": 1420000},
+    {"symbol": "JASMY/USDT", "price": 0.02156, "change": 8.7, "volume": 890000},
+    {"symbol": "REEF/USDT", "price": 0.001823, "change": 15.3, "volume": 5600000},
+    {"symbol": "AKRO/USDT", "price": 0.004567, "change": -1.8, "volume": 3200000},
+    {"symbol": "ALPACA/USDT", "price": 0.1847, "change": 6.4, "volume": 720000},
+    {"symbol": "DENT/USDT", "price": 0.001234, "change": 4.2, "volume": 8900000},
+    {"symbol": "KEY/USDT", "price": 0.003456, "change": -7.1, "volume": 4500000},
+]
+
 # Store for active WebSocket connections
 active_connections: List[WebSocket] = []
+
+# Models
+class TradingConfig(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    max_capital: float = Field(default=65.1, le=65.1)
+    profit_target_min: float = Field(default=0.08, ge=0.05, le=0.15)
+    profit_target_max: float = Field(default=0.10, ge=0.05, le=0.15)
+    max_operations_per_day: int = Field(default=3000, le=3000)
+    selected_token: str = ""
+    is_active: bool = False
+    demo_mode: bool = True
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class TradingConfigUpdate(BaseModel):
+    max_capital: Optional[float] = Field(None, le=65.1)
+    profit_target_min: Optional[float] = Field(None, ge=0.05, le=0.15)
+    profit_target_max: Optional[float] = Field(None, ge=0.05, le=0.15)
+    max_operations_per_day: Optional[int] = Field(None, le=3000)
+    selected_token: Optional[str] = None
+    is_active: Optional[bool] = None
+    demo_mode: Optional[bool] = None
+
+class Trade(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    symbol: str
+    side: str  # "BUY" or "SELL"
+    quantity: float
+    price: float
+    profit: float = 0.0
+    status: str = "COMPLETED"  # COMPLETED, PENDING, CANCELLED
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    demo: bool = True
+
+class Balance(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    total_balance: float
+    available_balance: float
+    in_orders: float = 0.0
+    total_profit_today: float = 0.0
+    operations_today: int = 0
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 # Demo trading simulation
 class DemoTrader:
@@ -106,52 +155,18 @@ demo_trader = DemoTrader()
 async def root():
     return {"message": "Binance Trading Platform API"}
 
-# Cache for token data
-token_cache = {"data": None, "last_updated": None}
-CACHE_DURATION = timedelta(seconds=10)
-
 @api_router.get("/tokens")
 async def get_alpha_tokens():
-    """Get list of Alpha tokens with updated prices from Binance"""
-    now = datetime.now(timezone.utc)
-
-    # Use cache if it's recent
-    if token_cache["last_updated"] and (now - token_cache["last_updated"]) < CACHE_DURATION:
-        return {"tokens": token_cache["data"]}
-
-    # Fetch 24h ticker data from Binance
-    # The get_all_tickers function actually fetches 24h ticker data
-    tickers = await get_all_tickers()
-    if not tickers:
-        raise HTTPException(status_code=503, detail="Could not fetch token data from Binance")
-
-    # Filter for USDT pairs and format for the frontend
-    alpha_tokens = []
-    for ticker in tickers:
-        if ticker['symbol'].endswith('USDT'):
-            try:
-                # The frontend expects symbol with a slash, e.g., BTC/USDT
-                formatted_symbol = f"{ticker['symbol'][:-4]}/{ticker['symbol'][-4:]}"
-
-                alpha_tokens.append({
-                    "symbol": formatted_symbol,
-                    "price": float(ticker['lastPrice']),
-                    "change": float(ticker['priceChangePercent']),
-                    "volume": float(ticker['quoteVolume'])
-                })
-            except (KeyError, ValueError) as e:
-                # Log if a ticker has missing data, but don't crash
-                logger.warning(f"Could not process ticker {ticker.get('symbol', 'N/A')}: {e}")
-                continue
+    """Obtener lista de tokens Alpha con precios actualizados"""
+    # En modo demo, devolver datos simulados
+    # En modo real, esto se conectaría a la API de Binance
+    for token in DEMO_ALPHA_TOKENS:
+        # Simular pequeñas variaciones de precio
+        price_change = random.uniform(-0.05, 0.05)
+        token["price"] = round(token["price"] * (1 + price_change), 8)
+        token["change"] = round(random.uniform(-10, 15), 2)
     
-    # Sort by volume to get the "Alpha" tokens
-    alpha_tokens.sort(key=lambda x: x['volume'], reverse=True)
-
-    # Update cache
-    token_cache["data"] = alpha_tokens
-    token_cache["last_updated"] = now
-
-    return {"tokens": alpha_tokens}
+    return {"tokens": DEMO_ALPHA_TOKENS}
 
 @api_router.post("/config", response_model=TradingConfig)
 async def create_or_update_config(config_data: TradingConfigUpdate):
@@ -194,45 +209,31 @@ async def get_config():
 
 @api_router.post("/trading/start")
 async def start_trading():
-    """Start automatic trading"""
-    config_data = await db.trading_configs.find_one({}, sort=[("created_at", -1)])
-    if not config_data:
-        raise HTTPException(status_code=404, detail="Configuration not found")
-
-    config = TradingConfig(**config_data)
+    """Iniciar trading automático"""
+    config = await db.trading_configs.find_one({}, sort=[("created_at", -1)])
+    if not config:
+        raise HTTPException(status_code=404, detail="Configuración no encontrada")
     
-    if not config.selected_token:
-        raise HTTPException(status_code=400, detail="Token not selected")
-
     await db.trading_configs.update_one(
-        {"id": config.id},
+        {"id": config["id"]},
         {"$set": {"is_active": True}}
     )
     
-    # Start the trading session in the background, passing the notifier and db
-    await start_trading_session(config.selected_token, notify_clients, db)
-
-    return {"message": "Trading started", "status": "active"}
+    return {"message": "Trading iniciado", "status": "active"}
 
 @api_router.post("/trading/stop")
 async def stop_trading():
-    """Stop automatic trading"""
-    config_data = await db.trading_configs.find_one({}, sort=[("created_at", -1)])
-    if not config_data:
-        raise HTTPException(status_code=404, detail="Configuration not found")
-
-    config = TradingConfig(**config_data)
+    """Detener trading automático"""
+    config = await db.trading_configs.find_one({}, sort=[("created_at", -1)])
+    if not config:
+        raise HTTPException(status_code=404, detail="Configuración no encontrada")
     
     await db.trading_configs.update_one(
-        {"id": config.id},
+        {"id": config["id"]},
         {"$set": {"is_active": False}}
     )
     
-    # Stop the trading session
-    if config.selected_token:
-        await stop_trading_session(config.selected_token)
-
-    return {"message": "Trading stopped", "status": "inactive"}
+    return {"message": "Trading detenido", "status": "inactive"}
 
 @api_router.post("/trading/simulate")
 async def simulate_trade_operation():
@@ -278,7 +279,7 @@ async def get_balance():
         return default_balance
     return Balance(**balance)
 
-# WebSocket for real-time updates
+# WebSocket para actualizaciones en tiempo real
 @api_router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
@@ -286,23 +287,21 @@ async def websocket_endpoint(websocket: WebSocket):
     
     try:
         while True:
-            # Send price updates every 5 seconds
-            await asyncio.sleep(5)
+            # Enviar actualizaciones de precios cada 2 segundos
+            await asyncio.sleep(2)
             
-            # Fetch the latest token data (uses the cache)
-            token_data = await get_alpha_tokens()
+            # Simular actualización de precios
+            for token in DEMO_ALPHA_TOKENS:
+                price_change = random.uniform(-0.01, 0.01)
+                token["price"] = round(token["price"] * (1 + price_change), 8)
             
-            await notify_clients({
+            await websocket.send_text(json.dumps({
                 "type": "price_update",
-                "data": token_data["tokens"]
-            })
+                "data": DEMO_ALPHA_TOKENS
+            }))
             
     except WebSocketDisconnect:
         active_connections.remove(websocket)
-    except Exception as e:
-        logger.error(f"Error in websocket endpoint: {e}")
-        if websocket in active_connections:
-            active_connections.remove(websocket)
 
 async def notify_clients(message: dict):
     """Notificar a todos los clientes WebSocket conectados"""
@@ -331,16 +330,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-@app.on_event("startup")
-async def startup_event():
-    # Initialize Binance client on startup
-    await get_binance_client()
-
 @app.on_event("shutdown")
-async def shutdown_event():
-    # Stop all trading sessions
-    await stop_all_sessions()
-    # Close MongoDB client
-    close_mongo_connection()
-    # Close Binance client
-    await close_binance_client()
+async def shutdown_db_client():
+    client.close()
