@@ -1,0 +1,36 @@
+INFO:     Started server process [6893]
+INFO:     Waiting for application startup.
+ERROR:    Traceback (most recent call last):
+  File "/home/jules/.pyenv/versions/3.12.11/lib/python3.12/site-packages/starlette/routing.py", line 732, in lifespan
+    async with self.lifespan_context(app) as maybe_state:
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jules/.pyenv/versions/3.12.11/lib/python3.12/site-packages/starlette/routing.py", line 608, in __aenter__
+    await self._router.startup()
+  File "/home/jules/.pyenv/versions/3.12.11/lib/python3.12/site-packages/starlette/routing.py", line 709, in startup
+    await handler()
+  File "/app/backend/server.py", line 337, in startup_event
+    await get_binance_client()
+  File "/app/backend/binance_client.py", line 31, in get_binance_client
+    binance_client = await AsyncClient.create(api_key, api_secret)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jules/.pyenv/versions/3.12.11/lib/python3.12/site-packages/binance/async_client.py", line 89, in create
+    await self.ping()
+  File "/home/jules/.pyenv/versions/3.12.11/lib/python3.12/site-packages/binance/async_client.py", line 304, in ping
+    return await self._get("ping", version=self.PRIVATE_API_VERSION)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jules/.pyenv/versions/3.12.11/lib/python3.12/site-packages/binance/async_client.py", line 257, in _get
+    return await self._request_api("get", path, signed, version, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jules/.pyenv/versions/3.12.11/lib/python3.12/site-packages/binance/async_client.py", line 192, in _request_api
+    return await self._request(method, uri, signed, force_params, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jules/.pyenv/versions/3.12.11/lib/python3.12/site-packages/binance/async_client.py", line 162, in _request
+    return await self._handle_response(response)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jules/.pyenv/versions/3.12.11/lib/python3.12/site-packages/binance/async_client.py", line 170, in _handle_response
+    raise BinanceAPIException(response, response.status, await response.text())
+binance.exceptions.BinanceAPIException: APIError(code=0): Service unavailable from a restricted location according to 'b. Eligibility' in https://www.binance.com/en/terms. Please contact customer service if you believe you received this message in error.
+
+ERROR:    Application startup failed. Exiting.
+CRITICAL: Binance API Key/Secret not found in .env file.
+Initializing Binance client...

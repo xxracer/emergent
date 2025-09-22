@@ -457,13 +457,13 @@ function App() {
                   <Input
                     id="max-capital"
                     type="number"
-                    max="65.1"
-                    step="0.1"
+                    max="200.0"
+                    step="1.0"
                     value={config.max_capital}
                     onChange={(e) => updateConfig({ max_capital: parseFloat(e.target.value) })}
                     className="bg-gray-800 border-gray-700 text-white"
                   />
-                  <p className="text-xs text-gray-500 mt-1">Máximo: $65.10</p>
+                  <p className="text-xs text-gray-500 mt-1">Máximo: $200.00</p>
                 </div>
 
                 <div>
@@ -471,9 +471,9 @@ function App() {
                   <Input
                     id="profit-min"
                     type="number"
-                    step="0.01"
-                    min="0.05"
-                    max="0.15"
+                    step="0.1"
+                    min="0.0"
+                    max="0.8"
                     value={config.profit_target_min}
                     onChange={(e) => updateConfig({ profit_target_min: parseFloat(e.target.value) })}
                     className="bg-gray-800 border-gray-700 text-white"
@@ -485,9 +485,9 @@ function App() {
                   <Input
                     id="profit-max"
                     type="number"
-                    step="0.01"
-                    min="0.05"
-                    max="0.15"
+                    step="0.1"
+                    min="0.0"
+                    max="0.8"
                     value={config.profit_target_max}
                     onChange={(e) => updateConfig({ profit_target_max: parseFloat(e.target.value) })}
                     className="bg-gray-800 border-gray-700 text-white"
